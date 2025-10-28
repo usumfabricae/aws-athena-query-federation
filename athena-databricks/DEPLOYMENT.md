@@ -11,7 +11,8 @@ The deployment is split into two components:
 ## Prerequisites
 
 - AWS CLI configured with appropriate permissions
-- PowerShell (Windows) or PowerShell Core (cross-platform)
+- **Windows**: PowerShell 5.1+ or PowerShell Core
+- **Unix/Linux/macOS**: Bash shell with `bc`, `jq`, `curl`/`wget`
 - Maven 3.6+ 
 - Java 17+
 - S3 bucket for storing deployment artifacts
@@ -22,6 +23,7 @@ The deployment is split into two components:
 
 Deploy both the layer and function in one command:
 
+**Windows (PowerShell):**
 ```powershell
 .\deploy-connector.ps1 `
     -S3Bucket "your-deployment-bucket" `
@@ -31,10 +33,24 @@ Deploy both the layer and function in one command:
     -Region "us-east-1"
 ```
 
+**Unix/Linux/macOS (Bash):**
+```bash
+# Make scripts executable first
+chmod +x *.sh
+
+./deploy-connector.sh \
+    -b "your-deployment-bucket" \
+    -f "athena-databricks-connector" \
+    -s "AthenaDatabricks" \
+    -p "your-spill-bucket" \
+    -r "us-east-1"
+```
+
 ### Option 2: Deploy Step by Step
 
 #### Step 1: Deploy the JDBC Driver Layer
 
+**Windows (PowerShell):**
 ```powershell
 .\deploy-layer.ps1 `
     -S3Bucket "your-deployment-bucket" `
@@ -42,16 +58,31 @@ Deploy both the layer and function in one command:
     -Region "us-east-1"
 ```
 
+**Unix/Linux/macOS (Bash):**
+```bash
+./deploy-layer.sh \
+    -b "your-deployment-bucket" \
+    -l "databricks-jdbc-driver" \
+    -r "us-east-1"
+```
+
 This will output a Layer ARN like: `arn:aws:lambda:us-east-1:123456789012:layer:databricks-jdbc-driver:1`
 
 #### Step 2: Build the Connector (without JDBC driver)
 
+**Windows (PowerShell):**
 ```powershell
 .\build-package.ps1
 ```
 
+**Unix/Linux/macOS (Bash):**
+```bash
+./build-package.sh
+```
+
 #### Step 3: Deploy the Connector Function
 
+**Windows (PowerShell):**
 ```powershell
 .\deploy-connector.ps1 `
     -S3Bucket "your-deployment-bucket" `
@@ -61,6 +92,18 @@ This will output a Layer ARN like: `arn:aws:lambda:us-east-1:123456789012:layer:
     -Region "us-east-1" `
     -SkipLayerDeployment `
     -ExistingLayerArn "arn:aws:lambda:us-east-1:123456789012:layer:databricks-jdbc-driver:1"
+```
+
+**Unix/Linux/macOS (Bash):**
+```bash
+./deploy-connector.sh \
+    -b "your-deployment-bucket" \
+    -f "athena-databricks-connector" \
+    -s "AthenaDatabricks" \
+    -p "your-spill-bucket" \
+    -r "us-east-1" \
+    -S \
+    -L "arn:aws:lambda:us-east-1:123456789012:layer:databricks-jdbc-driver:1"
 ```
 
 ## Parameters
@@ -86,10 +129,19 @@ This will output a Layer ARN like: `arn:aws:lambda:us-east-1:123456789012:layer:
 
 This deployment approach creates these new files:
 
+**PowerShell Scripts (Windows):**
 1. **deploy-layer.ps1** - Deploys the Databricks JDBC driver as a Lambda layer
 2. **build-package.ps1** - Builds the connector JAR without the JDBC driver
-3. **athena-databricks.yaml** - CloudFormation template that references the layer
-4. **deploy-connector.ps1** - Complete deployment script for both layer and function
+3. **deploy-connector.ps1** - Complete deployment script for both layer and function
+
+**Shell Scripts (Unix/Linux/macOS):**
+1. **deploy-layer.sh** - Deploys the Databricks JDBC driver as a Lambda layer
+2. **build-package.sh** - Builds the connector JAR without the JDBC driver
+3. **deploy-connector.sh** - Complete deployment script for both layer and function
+4. **download-databricks-driver.sh** - Downloads the Databricks JDBC driver
+
+**CloudFormation Template:**
+1. **athena-databricks.yaml** - CloudFormation template that references the layer
 
 ## Troubleshooting
 

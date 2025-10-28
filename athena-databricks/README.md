@@ -59,9 +59,19 @@ cd aws-athena-query-federation/athena-databricks
 
 The connector uses a Lambda layer architecture to overcome AWS Lambda's 250MB deployment package size limit:
 
+**Windows (PowerShell):**
 ```powershell
 # Build the connector (excludes JDBC driver)
 .\build-package.ps1
+```
+
+**Unix/Linux/macOS (Bash):**
+```bash
+# Make scripts executable first
+chmod +x *.sh
+
+# Build the connector (excludes JDBC driver)
+./build-package.sh
 ```
 
 This creates a smaller JAR file in the `target` directory. The Databricks JDBC driver is deployed separately as a Lambda layer.
@@ -145,6 +155,7 @@ The connector uses a Lambda layer architecture for deployment. See [LAYER_DEPLOY
 
 Deploy both the JDBC layer and connector function:
 
+**Windows (PowerShell):**
 ```powershell
 .\deploy-connector.ps1 `
     -S3Bucket "your-deployment-bucket" `
@@ -152,6 +163,16 @@ Deploy both the JDBC layer and connector function:
     -SecretNamePrefix "AthenaDatabricks" `
     -SpillBucket "your-spill-bucket" `
     -Region "us-east-1"
+```
+
+**Unix/Linux/macOS (Bash):**
+```bash
+./deploy-connector.sh \
+    -b "your-deployment-bucket" \
+    -f "athena-databricks-connector" \
+    -s "AthenaDatabricks" \
+    -p "your-spill-bucket" \
+    -r "us-east-1"
 ```
 
 ### Architecture
@@ -172,13 +193,27 @@ The connector supports multiple Databricks clusters through the multiplexing han
 For step-by-step deployment:
 
 1. **Deploy JDBC Layer**:
+
+**Windows (PowerShell):**
 ```powershell
 .\deploy-layer.ps1 -S3Bucket "your-deployment-bucket" -Region "us-east-1"
 ```
 
+**Unix/Linux/macOS (Bash):**
+```bash
+./deploy-layer.sh -b "your-deployment-bucket" -r "us-east-1"
+```
+
 2. **Build and Deploy Function**:
+
+**Windows (PowerShell):**
 ```powershell
 .\deploy-connector.ps1 -SkipLayerDeployment -ExistingLayerArn "arn:aws:lambda:us-east-1:123456789012:layer:databricks-jdbc-driver:1"
+```
+
+**Unix/Linux/macOS (Bash):**
+```bash
+./deploy-connector.sh -S -L "arn:aws:lambda:us-east-1:123456789012:layer:databricks-jdbc-driver:1"
 ```
 
 ## Usage
