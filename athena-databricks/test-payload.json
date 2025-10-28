@@ -1,0 +1,13 @@
+{
+  "@type": "PingRequest",
+  "identity": {
+    "id": "test",
+    "principal": "test", 
+    "account": "test",
+    "arn": "test",
+    "tags": {},
+    "groups": []
+  },
+  "queryId": "test",
+  "sourceType": "athena"
+}
