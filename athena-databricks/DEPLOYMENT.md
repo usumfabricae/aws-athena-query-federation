@@ -56,9 +56,18 @@ chmod +x *.sh
     -SecretNamePrefix "AthenaDatabricks" `
     -SpillBucket "your-spill-bucket" `
     -Region "us-east-1" `
-    -DatabricksSecretName "databricks/prod/credentials" `
-    -TestCatalog "hive_metastore" `
-    -TestSchema "default"
+    -AthenaDatabricksValue "workspace"
+```
+
+**Unix/Linux/macOS (Bash):**
+```bash
+./deploy-connector.sh \
+    -b "your-deployment-bucket" \
+    -f "athena-databricks-connector" \
+    -s "AthenaDatabricks" \
+    -p "your-spill-bucket" \
+    -r "us-east-1" \
+    -A "workspace"
 ```
 
 ### Option 2: Deploy Step by Step
@@ -118,7 +127,8 @@ This will output a Layer ARN like: `arn:aws:lambda:us-east-1:123456789012:layer:
     -p "your-spill-bucket" \
     -r "us-east-1" \
     -S \
-    -L "arn:aws:lambda:us-east-1:123456789012:layer:databricks-jdbc-driver:1"
+    -L "arn:aws:lambda:us-east-1:123456789012:layer:databricks-jdbc-driver:1" \
+    -A "workspace"
 ```
 
 ## Parameters
@@ -139,11 +149,7 @@ This will output a Layer ARN like: `arn:aws:lambda:us-east-1:123456789012:layer:
 - **LambdaMemory**: Function memory in MB (default: 3008)
 - **SecurityGroupIds**: VPC security groups (comma-separated)
 - **SubnetIds**: VPC subnets (comma-separated)
-- **DatabricksSecretName**: AWS Secrets Manager secret name containing Databricks credentials
-- **TestCatalog**: Default catalog name for testing (default: main)
-- **TestSchema**: Default schema name for testing (default: default)
-- **DatabricksHost**: Databricks cluster hostname (alternative to Secrets Manager)
-- **DatabricksHttpPath**: Databricks HTTP path (alternative to Secrets Manager)
+- **AthenaDatabricksValue**: Value for athena_databricks environment variable (default: workspace)
 
 ## Files Created
 
@@ -161,7 +167,13 @@ This deployment approach creates these new files:
 4. **download-databricks-driver.sh** - Downloads the Databricks JDBC driver
 
 **CloudFormation Template:**
-1. **athena-databricks.yaml** - CloudFormation template that references the layer
+1. **athena-databricks.yaml** - CloudFormation template with environment variables matching working deployment
+
+**Key Features:**
+- **Cross-platform compatibility** - Identical functionality on Windows and Unix/Linux/macOS
+- **Simplified environment variables** - Matches the working Lambda function configuration
+- **Layer-based architecture** - Overcomes AWS Lambda 250MB size limits
+- **Complete automation** - Single command deployment
 
 ## Troubleshooting
 

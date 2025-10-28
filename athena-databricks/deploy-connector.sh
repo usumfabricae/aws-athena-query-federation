@@ -18,6 +18,7 @@ SECURITY_GROUP_IDS=""
 SUBNET_IDS=""
 SKIP_LAYER_DEPLOYMENT=false
 EXISTING_LAYER_ARN=""
+ATHENA_DATABRICKS_VALUE="workspace"
 
 # Function to display usage
 usage() {
@@ -42,12 +43,13 @@ usage() {
     echo "  -u SUBNET_IDS             VPC subnets (comma-separated)"
     echo "  -S                        Skip layer deployment"
     echo "  -L EXISTING_LAYER_ARN     Use existing layer ARN (requires -S)"
+    echo "  -A ATHENA_DATABRICKS_VAL  Value for athena_databricks env var (default: workspace)"
     echo "  -h                        Show this help message"
     exit 1
 }
 
 # Parse command line arguments
-while getopts "b:f:s:p:c:P:k:l:n:r:t:m:g:u:SL:h" opt; do
+while getopts "b:f:s:p:c:P:k:l:n:r:t:m:g:u:SL:A:h" opt; do
     case $opt in
         b) S3_BUCKET="$OPTARG" ;;
         f) LAMBDA_FUNCTION_NAME="$OPTARG" ;;
@@ -65,6 +67,7 @@ while getopts "b:f:s:p:c:P:k:l:n:r:t:m:g:u:SL:h" opt; do
         u) SUBNET_IDS="$OPTARG" ;;
         S) SKIP_LAYER_DEPLOYMENT=true ;;
         L) EXISTING_LAYER_ARN="$OPTARG" ;;
+        A) ATHENA_DATABRICKS_VALUE="$OPTARG" ;;
         h) usage ;;
         *) usage ;;
     esac
@@ -82,6 +85,7 @@ echo "Lambda Function: $LAMBDA_FUNCTION_NAME"
 echo "Layer Name: $LAYER_NAME"
 echo "Stack Name: $STACK_NAME"
 echo "Region: $REGION"
+echo "Athena Databricks Value: $ATHENA_DATABRICKS_VALUE"
 echo ""
 
 LAYER_ARN="$EXISTING_LAYER_ARN"
@@ -150,6 +154,7 @@ PARAMETERS="$PARAMETERS ParameterKey=CodeS3Key,ParameterValue=$S3_KEY"
 PARAMETERS="$PARAMETERS ParameterKey=DatabricksJdbcLayerArn,ParameterValue=$LAYER_ARN"
 PARAMETERS="$PARAMETERS ParameterKey=LambdaTimeout,ParameterValue=$LAMBDA_TIMEOUT"
 PARAMETERS="$PARAMETERS ParameterKey=LambdaMemory,ParameterValue=$LAMBDA_MEMORY"
+PARAMETERS="$PARAMETERS ParameterKey=AthenaDatabricksValue,ParameterValue=$ATHENA_DATABRICKS_VALUE"
 
 # Add VPC parameters if provided
 if [ -n "$SECURITY_GROUP_IDS" ]; then
@@ -158,6 +163,8 @@ fi
 if [ -n "$SUBNET_IDS" ]; then
     PARAMETERS="$PARAMETERS ParameterKey=SubnetIds,ParameterValue=$SUBNET_IDS"
 fi
+
+# Databricks configuration is handled via AthenaDatabricksValue parameter
 
 # Check if stack exists
 STACK_EXISTS=false
