@@ -1,8 +1,8 @@
 Transform: 'AWS::Serverless-2016-10-31'
 Metadata:
   'AWS::ServerlessRepo::Application':
-    Name: AthenaDatabricksConnector
-    Description: 'This connector enables Amazon Athena to communicate with your Databricks cluster(s) using JDBC driver.'
+    Name: AthenaDatabricksConnectorWithLayer
+    Description: 'This connector enables Amazon Athena to communicate with your Databricks cluster(s) using JDBC driver deployed as a Lambda layer.'
     Author: 'default author'
     SpdxLicenseId: Apache-2.0
     LicenseUrl: LICENSE.txt
@@ -30,6 +30,9 @@ Parameters:
     Description: 'The S3 key (path) to the Lambda deployment package JAR file'
     Type: String
     Default: 'athena-databricks-2022.47.1.jar'
+  DatabricksJdbcLayerArn:
+    Description: 'The ARN of the Lambda layer containing the Databricks JDBC driver'
+    Type: String
   SpillBucket:
     Description: 'The name of the bucket where this function can spill data.'
     Type: String
@@ -85,11 +88,13 @@ Resources:
       CodeUri: 
         Bucket: !Ref CodeS3Bucket
         Key: !Ref CodeS3Key
-      Description: "Enables Amazon Athena to communicate with Databricks using JDBC"
+      Description: "Enables Amazon Athena to communicate with Databricks using JDBC driver from Lambda layer"
       Timeout: !Ref LambdaTimeout
       MemorySize: !Ref LambdaMemory
       PermissionsBoundary: !If [ HasPermissionsBoundary, !Ref PermissionsBoundaryARN, !Ref "AWS::NoValue" ]
       Role: !If [NotHasLambdaRole, !GetAtt FunctionRole.Arn, !Ref LambdaRoleARN]
+      Layers:
+        - !Ref DatabricksJdbcLayerArn
       VpcConfig: !If 
         - HasVpcConfig
         - SecurityGroupIds: !Ref SecurityGroupIds

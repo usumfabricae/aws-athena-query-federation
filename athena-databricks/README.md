@@ -57,21 +57,16 @@ cd aws-athena-query-federation/athena-databricks
 
 ### Step 2: Build the Connector
 
-```bash
-mvn clean package
+The connector uses a Lambda layer architecture to overcome AWS Lambda's 250MB deployment package size limit:
+
+```powershell
+# Build the connector (excludes JDBC driver)
+.\build-package.ps1
 ```
 
-This will create a deployment-ready JAR file in the `target` directory that includes all dependencies, including the Databricks JDBC driver.
+This creates a smaller JAR file in the `target` directory. The Databricks JDBC driver is deployed separately as a Lambda layer.
 
-**Note**: The JAR includes all necessary dependencies, so no additional Lambda layers are required for deployment.
-
-### Step 3: Upload to S3
-
-Upload the built JAR to an S3 bucket in your AWS account:
-
-```bash
-aws s3 cp target/athena-databricks-2022.47.1.jar s3://your-deployment-bucket/
-```
+**Note**: The JDBC driver is deployed as a separate Lambda layer to stay within AWS Lambda size limits.
 
 ## Configuration
 
@@ -144,72 +139,46 @@ PWD=dapi1234567890abcdef...
 
 ## Deployment
 
-The connector provides CloudFormation templates for easy deployment.
+The connector uses a Lambda layer architecture for deployment. See [LAYER_DEPLOYMENT.md](LAYER_DEPLOYMENT.md) for detailed instructions.
 
-### Single Cluster Deployment
+### Quick Deployment
 
-Use `athena-databricks.yaml` for connecting to a single Databricks cluster:
+Deploy both the JDBC layer and connector function:
 
-```bash
-aws cloudformation create-stack \
-  --stack-name athena-databricks-connector \
-  --template-body file://athena-databricks.yaml \
-  --parameters \
-    ParameterKey=LambdaFunctionName,ParameterValue=athena-databricks \
-    ParameterKey=SpillBucket,ParameterValue=my-athena-spill-bucket \
-    ParameterKey=DatabricksServerHostname,ParameterValue=dbc-12345678-abcd.cloud.databricks.com \
-    ParameterKey=DatabricksHttpPath,ParameterValue=/sql/1.0/warehouses/abcd1234efgh5678 \
-    ParameterKey=DatabricksSecretName,ParameterValue=databricks/prod/credentials \
-  --capabilities CAPABILITY_IAM
+```powershell
+.\deploy-connector.ps1 `
+    -S3Bucket "your-deployment-bucket" `
+    -LambdaFunctionName "athena-databricks-connector" `
+    -SecretNamePrefix "AthenaDatabricks" `
+    -SpillBucket "your-spill-bucket" `
+    -Region "us-east-1"
 ```
 
-### Multi-Cluster Deployment
+### Architecture
 
-Use `athena-databricks-mux.yaml` for connecting to multiple Databricks clusters:
+The deployment creates:
+1. **Lambda Layer**: Contains the Databricks JDBC driver (~100MB)
+2. **Lambda Function**: Contains the connector logic (references the layer)
 
-```bash
-aws cloudformation create-stack \
-  --stack-name athena-databricks-mux-connector \
-  --template-body file://athena-databricks-mux.yaml \
-  --parameters \
-    ParameterKey=LambdaFunctionName,ParameterValue=athena-databricks-mux \
-    ParameterKey=SpillBucket,ParameterValue=my-athena-spill-bucket \
-  --capabilities CAPABILITY_IAM
+### Multi-Cluster Support
+
+The connector supports multiple Databricks clusters through the multiplexing handler. Configure additional clusters using environment variables with prefixes:
+- `prod_default` for production connection string
+- `staging_default` for staging connection string  
+- `dev_default` for development connection string
+
+### Manual Deployment Steps
+
+For step-by-step deployment:
+
+1. **Deploy JDBC Layer**:
+```powershell
+.\deploy-layer.ps1 -S3Bucket "your-deployment-bucket" -Region "us-east-1"
 ```
 
-For multi-cluster deployments, configure each cluster using environment variables with prefixes:
-- `prod_DATABRICKS_HOST` and `prod_DATABRICKS_HTTP_PATH`
-- `staging_DATABRICKS_HOST` and `staging_DATABRICKS_HTTP_PATH`
-- `dev_DATABRICKS_HOST` and `dev_DATABRICKS_HTTP_PATH`
-
-**Note**: The connector also supports a `default` connection string environment variable as an alternative to individual host/path variables.
-
-### Manual Lambda Deployment
-
-If you prefer manual deployment:
-
-1. **Create Lambda Function**:
-```bash
-aws lambda create-function \
-  --function-name athena-databricks \
-  --runtime java17 \
-  --role arn:aws:iam::123456789012:role/lambda-execution-role \
-  --handler com.amazonaws.athena.connectors.databricks.DatabricksCompositeHandler \
-  --code S3Bucket=your-deployment-bucket,S3Key=athena-databricks-2022.47.1.jar \
-  --timeout 900 \
-  --memory-size 1024
-```
-
-2. **Configure Environment Variables**:
-```bash
-aws lambda update-function-configuration \
-  --function-name athena-databricks \
-  --environment Variables='{
-    "DATABRICKS_HOST": "dbc-12345678-abcd.cloud.databricks.com",
-    "DATABRICKS_HTTP_PATH": "/sql/1.0/warehouses/abcd1234efgh5678",
-    "databricks_secret_name": "databricks/prod/credentials",
-    "spill_bucket": "my-athena-spill-bucket"
-  }'
+2. **Build and Deploy Function**:
+```powershell
+.\deploy-connector.ps1 -SkipLayerDeployment -ExistingLayerArn "arn:aws:lambda:us-east-1:123456789012:layer:databricks-jdbc-driver:1"
 ```
 
 ## Usage

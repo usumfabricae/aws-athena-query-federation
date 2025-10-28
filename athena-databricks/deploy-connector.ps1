@@ -1,5 +1,5 @@
-# Deploy Databricks Athena Connector to AWS Lambda
-# This script builds, uploads to S3, and deploys the connector using CloudFormation
+# Deploy Databricks Athena Connector with Lambda Layer
+# This script builds, uploads, and deploys both the JDBC layer and connector function
 
 param(
     [Parameter(Mandatory=$true)]
@@ -19,23 +19,60 @@ param(
     
     [string]$SpillPrefix = "athena-spill",
     [string]$S3Key = "athena-databricks-2022.47.1.jar",
-    [string]$StackName = "athena-databricks-connector",
+    [string]$LayerName = "databricks-jdbc-driver",
+    [string]$StackName = "athena-databricks-connector-with-layer",
     [string]$Region = "us-east-1",
     [int]$LambdaTimeout = 900,
     [int]$LambdaMemory = 3008,
     [string]$SecurityGroupIds = "",
-    [string]$SubnetIds = ""
+    [string]$SubnetIds = "",
+    [switch]$SkipLayerDeployment = $false,
+    [string]$ExistingLayerArn = ""
 )
 
-Write-Host "=== Databricks Athena Connector Deployment ===" -ForegroundColor Green
+Write-Host "=== Databricks Athena Connector Deployment (with Layer) ===" -ForegroundColor Green
 Write-Host "S3 Bucket: $S3Bucket" -ForegroundColor Cyan
 Write-Host "Lambda Function: $LambdaFunctionName" -ForegroundColor Cyan
+Write-Host "Layer Name: $LayerName" -ForegroundColor Cyan
 Write-Host "Stack Name: $StackName" -ForegroundColor Cyan
 Write-Host "Region: $Region" -ForegroundColor Cyan
 Write-Host ""
 
-# Step 1: Build the connector
-Write-Host "Step 1: Building the connector..." -ForegroundColor Yellow
+$LayerArn = $ExistingLayerArn
+
+# Step 1: Deploy Lambda Layer (if not skipped)
+if (!$SkipLayerDeployment -and $ExistingLayerArn -eq "") {
+    Write-Host "Step 1: Deploying Databricks JDBC Layer..." -ForegroundColor Yellow
+    try {
+        $LayerOutput = & .\deploy-layer.ps1 -S3Bucket $S3Bucket -LayerName $LayerName -Region $Region
+        if ($LASTEXITCODE -ne 0) {
+            throw "Layer deployment failed"
+        }
+        
+        # Extract Layer ARN from output
+        $LayerArnMatch = $LayerOutput | Select-String -Pattern "arn:aws:lambda:.*:layer:.*:\d+"
+        if ($LayerArnMatch) {
+            $LayerArn = $LayerArnMatch.Matches[0].Value
+            Write-Host "✓ Layer deployed successfully: $LayerArn" -ForegroundColor Green
+        } else {
+            throw "Could not extract Layer ARN from deployment output"
+        }
+    }
+    catch {
+        Write-Host "✗ Layer deployment failed: $_" -ForegroundColor Red
+        exit 1
+    }
+} elseif ($ExistingLayerArn -ne "") {
+    Write-Host "Step 1: Using existing layer: $ExistingLayerArn" -ForegroundColor Yellow
+    $LayerArn = $ExistingLayerArn
+} else {
+    Write-Host "Step 1: Skipping layer deployment (as requested)" -ForegroundColor Yellow
+    Write-Host "⚠ You must provide -ExistingLayerArn parameter when skipping layer deployment" -ForegroundColor Red
+    exit 1
+}
+
+# Step 2: Build the connector (without JDBC driver)
+Write-Host "Step 2: Building the connector (excluding JDBC driver)..." -ForegroundColor Yellow
 try {
     & .\build-package.ps1
     if ($LASTEXITCODE -ne 0) {
@@ -48,14 +85,14 @@ catch {
     exit 1
 }
 
-# Step 2: Upload to S3
+# Step 3: Upload connector JAR to S3
 $JarPath = ".\target\athena-databricks-2022.47.1.jar"
 if (!(Test-Path $JarPath)) {
     Write-Host "✗ JAR file not found at $JarPath" -ForegroundColor Red
     exit 1
 }
 
-Write-Host "Step 2: Uploading JAR to S3..." -ForegroundColor Yellow
+Write-Host "Step 3: Uploading connector JAR to S3..." -ForegroundColor Yellow
 try {
     aws s3 cp $JarPath "s3://$S3Bucket/$S3Key" --region $Region
     if ($LASTEXITCODE -ne 0) {
@@ -69,8 +106,8 @@ catch {
     exit 1
 }
 
-# Step 3: Deploy with CloudFormation
-Write-Host "Step 3: Deploying with CloudFormation..." -ForegroundColor Yellow
+# Step 4: Deploy with CloudFormation
+Write-Host "Step 4: Deploying with CloudFormation..." -ForegroundColor Yellow
 
 # Build parameters
 $Parameters = @(
@@ -81,6 +118,7 @@ $Parameters = @(
     "ParameterKey=SpillPrefix,ParameterValue=$SpillPrefix",
     "ParameterKey=CodeS3Bucket,ParameterValue=$S3Bucket",
     "ParameterKey=CodeS3Key,ParameterValue=$S3Key",
+    "ParameterKey=DatabricksJdbcLayerArn,ParameterValue=$LayerArn",
     "ParameterKey=LambdaTimeout,ParameterValue=$LambdaTimeout",
     "ParameterKey=LambdaMemory,ParameterValue=$LambdaMemory"
 )
@@ -154,10 +192,15 @@ catch {
 
 Write-Host ""
 Write-Host "=== Deployment Summary ===" -ForegroundColor Green
-Write-Host "✓ Connector built and packaged" -ForegroundColor Green
+Write-Host "✓ JDBC Layer deployed: $LayerArn" -ForegroundColor Green
+Write-Host "✓ Connector built and packaged (without JDBC driver)" -ForegroundColor Green
 Write-Host "✓ JAR uploaded to S3: s3://$S3Bucket/$S3Key" -ForegroundColor Green
 Write-Host "✓ CloudFormation stack deployed: $StackName" -ForegroundColor Green
 Write-Host "✓ Lambda function created: $LambdaFunctionName" -ForegroundColor Green
+Write-Host ""
+Write-Host "Architecture:" -ForegroundColor Cyan
+Write-Host "- Lambda Layer: Contains Databricks JDBC driver" -ForegroundColor White
+Write-Host "- Lambda Function: Contains connector logic (references layer)" -ForegroundColor White
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
 Write-Host "1. Configure your Databricks connection details in AWS Secrets Manager" -ForegroundColor White

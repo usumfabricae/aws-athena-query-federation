@@ -1,112 +1,140 @@
-# Build and Package Lambda deployment artifact for Databricks Athena Connector
-# This script creates a shaded JAR with all dependencies for AWS Lambda deployment
+# Build Databricks Athena Connector (Layer Version)
+# This script builds the connector JAR excluding the Databricks JDBC driver
+# The JDBC driver should be deployed as a separate Lambda layer
 
-Write-Host "Building Databricks Athena Connector Lambda deployment package..." -ForegroundColor Green
+param(
+    [Parameter(Mandatory=$false)]
+    [switch]$SkipTests = $false,
+    
+    [Parameter(Mandatory=$false)]
+    [switch]$Clean = $true
+)
 
-# Set variables
-$ProjectDir = Get-Location
-$TargetDir = Join-Path $ProjectDir "target"
-$LibDir = Join-Path $ProjectDir "..\..\lib"
-$ArtifactName = "athena-databricks-2022.47.1"
-$ShadedJar = Join-Path $TargetDir "$ArtifactName.jar"
+Write-Host "=== Building Databricks Athena Connector (Layer Version) ===" -ForegroundColor Green
+Write-Host "This build excludes the Databricks JDBC driver from the JAR" -ForegroundColor Cyan
+Write-Host "The driver should be deployed as a separate Lambda layer" -ForegroundColor Cyan
+Write-Host ""
 
-# Create target directory if it doesn't exist
-if (!(Test-Path $TargetDir)) {
-    New-Item -ItemType Directory -Path $TargetDir -Force | Out-Null
+# Check if Maven is available
+try {
+    $MavenVersion = mvn --version 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Maven not found"
+    }
+    Write-Host "✓ Maven found" -ForegroundColor Green
+}
+catch {
+    Write-Host "✗ Maven is required but not found in PATH" -ForegroundColor Red
+    Write-Host "Please install Maven and ensure it's in your PATH" -ForegroundColor Red
+    exit 1
 }
 
-# Check if Databricks JDBC driver exists
-$DatabricksJar = Join-Path $LibDir "DatabricksJDBC42.jar"
-if (!(Test-Path $DatabricksJar)) {
-    Write-Host "Databricks JDBC driver not found. Attempting to download..." -ForegroundColor Yellow
+# Step 1: Clean previous builds
+if ($Clean) {
+    Write-Host "Step 1: Cleaning previous builds..." -ForegroundColor Yellow
     try {
-        & .\download-databricks-driver.ps1
-        if (!(Test-Path $DatabricksJar)) {
-            throw "Driver download failed"
+        mvn clean -q
+        if ($LASTEXITCODE -ne 0) {
+            throw "Maven clean failed"
         }
-    } catch {
-        Write-Host "ERROR: Failed to download Databricks JDBC driver" -ForegroundColor Red
-        Write-Host "Please manually download and place DatabricksJDBC42.jar in the lib directory" -ForegroundColor Red
+        Write-Host "✓ Clean completed" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "✗ Clean failed: $_" -ForegroundColor Red
         exit 1
     }
+} else {
+    Write-Host "Step 1: Skipping clean (as requested)" -ForegroundColor Yellow
 }
 
-Write-Host "Found Databricks JDBC driver: $DatabricksJar" -ForegroundColor Green
+# Step 2: Download Databricks driver (for compilation, but exclude from JAR)
+Write-Host "Step 2: Ensuring Databricks JDBC driver is available..." -ForegroundColor Yellow
+$DriverPath = ".\lib\DatabricksJDBC42.jar"
+if (!(Test-Path $DriverPath)) {
+    try {
+        & .\download-databricks-driver.ps1
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to download Databricks driver"
+        }
+        Write-Host "✓ Databricks driver downloaded" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "✗ Failed to download driver: $_" -ForegroundColor Red
+        exit 1
+    }
+} else {
+    Write-Host "✓ Databricks driver already available" -ForegroundColor Green
+}
 
-# Try to build with Maven first (skip tests and checkstyle)
-Write-Host "Attempting to build with Maven..." -ForegroundColor Yellow
+# Step 3: Build with Maven (excluding JDBC driver from final JAR)
+$MavenGoals = "compile package"
+if ($SkipTests) {
+    $MavenGoals += " -DskipTests"
+    Write-Host "Step 3: Building connector (skipping tests)..." -ForegroundColor Yellow
+} else {
+    Write-Host "Step 3: Building connector (including tests)..." -ForegroundColor Yellow
+}
 
 try {
-    $env:MAVEN_OPTS = "-Dlog4j2.formatMsgNoLookups=true"
-    $mvnResult = & mvn clean package -DskipTests "-Dcheckstyle.skip=true" -q 2>&1
-    
-    if ($LASTEXITCODE -eq 0 -and (Test-Path $ShadedJar)) {
-        Write-Host "Maven build successful!" -ForegroundColor Green
-        
-        # Get JAR size
-        $JarInfo = Get-Item $ShadedJar
-        $JarSize = $JarInfo.Length
-        $JarSizeMB = [math]::Round($JarSize / 1024 / 1024, 2)
-        
-        Write-Host "JAR size: ${JarSizeMB}MB ($JarSize bytes)" -ForegroundColor Cyan
-        
-        # Check Lambda deployment limits
-        if ($JarSize -gt 262144000) {  # 250MB limit
-            Write-Host "WARNING: JAR size exceeds AWS Lambda deployment limit of 250MB" -ForegroundColor Red
-            Write-Host "Consider optimizing dependencies or using Lambda layers" -ForegroundColor Red
-        } elseif ($JarSize -gt 52428800) {  # 50MB limit for direct upload
-            Write-Host "WARNING: JAR size exceeds 50MB - will require S3 upload for deployment" -ForegroundColor Yellow
-        } else {
-            Write-Host "JAR size is within Lambda direct upload limits" -ForegroundColor Green
-        }
-        
-        Write-Host ""
-        Write-Host "Lambda deployment artifact ready: $ShadedJar" -ForegroundColor Green
-        Write-Host ""
-        
-    } else {
-        throw "Maven build failed or JAR not created"
+    # The JDBC driver has 'provided' scope, so it won't be included in the JAR
+    mvn $MavenGoals -q
+    if ($LASTEXITCODE -ne 0) {
+        throw "Maven build failed"
     }
-} catch {
-    Write-Host "Maven build failed. Creating minimal deployment package for demonstration..." -ForegroundColor Yellow
+    Write-Host "✓ Build completed successfully" -ForegroundColor Green
+}
+catch {
+    Write-Host "✗ Build failed: $_" -ForegroundColor Red
+    Write-Host "Try running with verbose output: mvn $MavenGoals" -ForegroundColor Red
+    exit 1
+}
+
+# Step 4: Verify build output
+$JarPath = ".\target\athena-databricks-2022.47.1.jar"
+if (!(Test-Path $JarPath)) {
+    Write-Host "✗ Expected JAR file not found at $JarPath" -ForegroundColor Red
+    Write-Host "Check the Maven build output for errors" -ForegroundColor Red
+    exit 1
+}
+
+# Step 5: Check JAR size and contents
+try {
+    $JarSize = (Get-Item $JarPath).Length
+    $JarSizeMB = [math]::Round($JarSize / 1MB, 2)
+    Write-Host "✓ JAR created: $JarPath ($JarSizeMB MB)" -ForegroundColor Green
     
-    # Create a minimal JAR structure for demonstration
-    $TempDir = Join-Path $TargetDir "temp-jar"
-    $ManifestDir = Join-Path $TempDir "META-INF"
-    New-Item -ItemType Directory -Path $ManifestDir -Force | Out-Null
+    # Check if JDBC driver is excluded
+    $JarContents = jar -tf $JarPath | Select-String -Pattern "DatabricksJDBC|databricks.*jdbc" -Quiet
+    if ($JarContents) {
+        Write-Host "⚠ WARNING: JDBC driver may still be included in JAR" -ForegroundColor Yellow
+        Write-Host "Verify the Maven profile is correctly excluding the driver" -ForegroundColor Yellow
+    } else {
+        Write-Host "✓ JDBC driver successfully excluded from JAR" -ForegroundColor Green
+    }
     
-    # Create manifest
-    $ManifestContent = @"
-Manifest-Version: 1.0
-Main-Class: com.amazonaws.athena.connectors.databricks.DatabricksCompositeHandler
-Implementation-Title: Amazon Athena Databricks Connector
-Implementation-Version: 2022.47.1
-Implementation-Vendor: Amazon Web Services
-"@
-    $ManifestPath = Join-Path $ManifestDir "MANIFEST.MF"
-    $ManifestContent | Out-File -FilePath $ManifestPath -Encoding ASCII
-    
-    # Create placeholder structure
-    $PlaceholderDir = Join-Path $TempDir "com\amazonaws\athena\connectors\databricks"
-    New-Item -ItemType Directory -Path $PlaceholderDir -Force | Out-Null
-    "# Placeholder - actual compiled classes would be here" | Out-File -FilePath (Join-Path $PlaceholderDir "README.txt")
-    
-    # Create a simple ZIP file as JAR (since jar command might not be available)
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    if (Test-Path $ShadedJar) { Remove-Item $ShadedJar }
-    [System.IO.Compression.ZipFile]::CreateFromDirectory($TempDir, $ShadedJar)
-    
-    # Clean up temp directory
-    Remove-Item -Recurse -Force $TempDir
-    
-    $JarInfo = Get-Item $ShadedJar
-    $JarSize = $JarInfo.Length
-    $JarSizeMB = [math]::Round($JarSize / 1024 / 1024, 2)
-    
-    Write-Host "Minimal deployment package created: $ShadedJar" -ForegroundColor Yellow
-    Write-Host "Package size: ${JarSizeMB}MB ($JarSize bytes)" -ForegroundColor Cyan
-    Write-Host "NOTE: This is a placeholder package. Actual deployment requires successful compilation." -ForegroundColor Red
+    # Size validation
+    if ($JarSize -gt 262144000) {  # 250MB limit
+        Write-Host "✗ JAR size still exceeds AWS Lambda limit of 250MB" -ForegroundColor Red
+        Write-Host "Additional optimization may be required" -ForegroundColor Red
+        exit 1
+    } elseif ($JarSize -gt 52428800) {  # 50MB limit for direct upload
+        Write-Host "⚠ JAR size exceeds 50MB - will require S3 upload for deployment" -ForegroundColor Yellow
+    } else {
+        Write-Host "✓ JAR size is within direct upload limits" -ForegroundColor Green
+    }
+}
+catch {
+    Write-Host "✗ Failed to analyze JAR: $_" -ForegroundColor Red
+    exit 1
 }
 
 Write-Host ""
-Write-Host "Build and packaging complete!" -ForegroundColor Green
+Write-Host "=== Build Summary ===" -ForegroundColor Green
+Write-Host "✓ Connector built successfully" -ForegroundColor Green
+Write-Host "✓ JAR file: $JarPath ($JarSizeMB MB)" -ForegroundColor Green
+Write-Host "✓ JDBC driver excluded (deploy as separate layer)" -ForegroundColor Green
+Write-Host ""
+Write-Host "Next steps:" -ForegroundColor Cyan
+Write-Host "1. Deploy the Databricks JDBC driver as a Lambda layer using deploy-layer.ps1" -ForegroundColor White
+Write-Host "2. Update CloudFormation template to reference the layer" -ForegroundColor White
+Write-Host "3. Deploy the Lambda function using the updated template" -ForegroundColor White
