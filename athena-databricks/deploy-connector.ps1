@@ -1,6 +1,3 @@
-# Deploy Databricks Athena Connector with Lambda Layer
-# This script builds, uploads, and deploys both the JDBC layer and connector function
-
 param(
     [Parameter(Mandatory=$true)]
     [string]$S3Bucket,
@@ -27,7 +24,8 @@ param(
     [string]$SecurityGroupIds = "",
     [string]$SubnetIds = "",
     [switch]$SkipLayerDeployment = $false,
-    [string]$ExistingLayerArn = ""
+    [string]$ExistingLayerArn = "",
+    [string]$AthenaDatabricksValue = "workspace"
 )
 
 Write-Host "=== Databricks Athena Connector Deployment (with Layer) ===" -ForegroundColor Green
@@ -36,6 +34,7 @@ Write-Host "Lambda Function: $LambdaFunctionName" -ForegroundColor Cyan
 Write-Host "Layer Name: $LayerName" -ForegroundColor Cyan
 Write-Host "Stack Name: $StackName" -ForegroundColor Cyan
 Write-Host "Region: $Region" -ForegroundColor Cyan
+Write-Host "Athena Databricks Value: $AthenaDatabricksValue" -ForegroundColor Cyan
 Write-Host ""
 
 $LayerArn = $ExistingLayerArn
@@ -53,13 +52,13 @@ if (!$SkipLayerDeployment -and $ExistingLayerArn -eq "") {
         $LayerArnMatch = $LayerOutput | Select-String -Pattern "arn:aws:lambda:.*:layer:.*:\d+"
         if ($LayerArnMatch) {
             $LayerArn = $LayerArnMatch.Matches[0].Value
-            Write-Host "✓ Layer deployed successfully: $LayerArn" -ForegroundColor Green
+            Write-Host "Layer deployed successfully: $LayerArn" -ForegroundColor Green
         } else {
             throw "Could not extract Layer ARN from deployment output"
         }
     }
     catch {
-        Write-Host "✗ Layer deployment failed: $_" -ForegroundColor Red
+        Write-Host "Layer deployment failed: $_" -ForegroundColor Red
         exit 1
     }
 } elseif ($ExistingLayerArn -ne "") {
@@ -67,7 +66,7 @@ if (!$SkipLayerDeployment -and $ExistingLayerArn -eq "") {
     $LayerArn = $ExistingLayerArn
 } else {
     Write-Host "Step 1: Skipping layer deployment (as requested)" -ForegroundColor Yellow
-    Write-Host "⚠ You must provide -ExistingLayerArn parameter when skipping layer deployment" -ForegroundColor Red
+    Write-Host "You must provide -ExistingLayerArn parameter when skipping layer deployment" -ForegroundColor Red
     exit 1
 }
 
@@ -78,17 +77,17 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Build failed"
     }
-    Write-Host "✓ Build completed successfully" -ForegroundColor Green
+    Write-Host "SUCCESS: Build completed successfully" -ForegroundColor Green
 }
 catch {
-    Write-Host "✗ Build failed: $_" -ForegroundColor Red
+    Write-Host "ERROR: Build failed: $_" -ForegroundColor Red
     exit 1
 }
 
 # Step 3: Upload connector JAR to S3
 $JarPath = ".\target\athena-databricks-2022.47.1.jar"
 if (!(Test-Path $JarPath)) {
-    Write-Host "✗ JAR file not found at $JarPath" -ForegroundColor Red
+    Write-Host "ERROR: JAR file not found at $JarPath" -ForegroundColor Red
     exit 1
 }
 
@@ -98,10 +97,10 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "S3 upload failed"
     }
-    Write-Host "✓ JAR uploaded to s3://$S3Bucket/$S3Key" -ForegroundColor Green
+    Write-Host "SUCCESS: JAR uploaded to s3://$S3Bucket/$S3Key" -ForegroundColor Green
 }
 catch {
-    Write-Host "✗ S3 upload failed: $_" -ForegroundColor Red
+    Write-Host "ERROR: S3 upload failed: $_" -ForegroundColor Red
     Write-Host "Make sure the S3 bucket exists and you have upload permissions" -ForegroundColor Red
     exit 1
 }
@@ -120,7 +119,8 @@ $Parameters = @(
     "ParameterKey=CodeS3Key,ParameterValue=$S3Key",
     "ParameterKey=DatabricksJdbcLayerArn,ParameterValue=$LayerArn",
     "ParameterKey=LambdaTimeout,ParameterValue=$LambdaTimeout",
-    "ParameterKey=LambdaMemory,ParameterValue=$LambdaMemory"
+    "ParameterKey=LambdaMemory,ParameterValue=$LambdaMemory",
+    "ParameterKey=AthenaDatabricksValue,ParameterValue=$AthenaDatabricksValue"
 )
 
 # Add VPC parameters if provided
@@ -130,6 +130,8 @@ if ($SecurityGroupIds -ne "") {
 if ($SubnetIds -ne "") {
     $Parameters += "ParameterKey=SubnetIds,ParameterValue=$SubnetIds"
 }
+
+# Databricks configuration is handled via AthenaDatabricksValue parameter
 
 try {
     # Check if stack exists
@@ -148,7 +150,7 @@ try {
             --stack-name $StackName `
             --template-body file://athena-databricks.yaml `
             --parameters $Parameters `
-            --capabilities CAPABILITY_IAM `
+            --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND `
             --region $Region
     }
     else {
@@ -157,7 +159,7 @@ try {
             --stack-name $StackName `
             --template-body file://athena-databricks.yaml `
             --parameters $Parameters `
-            --capabilities CAPABILITY_IAM `
+            --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND `
             --region $Region
     }
 
@@ -165,38 +167,38 @@ try {
         throw "CloudFormation deployment failed"
     }
 
-    Write-Host "✓ CloudFormation deployment initiated" -ForegroundColor Green
+    Write-Host "SUCCESS: CloudFormation deployment initiated" -ForegroundColor Green
     Write-Host "Waiting for stack deployment to complete..." -ForegroundColor Yellow
 
     # Wait for stack completion
     aws cloudformation wait stack-create-complete --stack-name $StackName --region $Region 2>$null
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "✓ Stack creation completed successfully" -ForegroundColor Green
+        Write-Host "SUCCESS: Stack creation completed successfully" -ForegroundColor Green
     }
     else {
         aws cloudformation wait stack-update-complete --stack-name $StackName --region $Region 2>$null
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "✓ Stack update completed successfully" -ForegroundColor Green
+            Write-Host "SUCCESS: Stack update completed successfully" -ForegroundColor Green
         }
         else {
-            Write-Host "⚠ Stack deployment may still be in progress" -ForegroundColor Yellow
+            Write-Host "WARNING: Stack deployment may still be in progress" -ForegroundColor Yellow
             Write-Host "Check the CloudFormation console for status" -ForegroundColor Yellow
         }
     }
 }
 catch {
-    Write-Host "✗ CloudFormation deployment failed: $_" -ForegroundColor Red
+    Write-Host "ERROR: CloudFormation deployment failed: $_" -ForegroundColor Red
     Write-Host "Check the CloudFormation console for detailed error information" -ForegroundColor Red
     exit 1
 }
 
 Write-Host ""
 Write-Host "=== Deployment Summary ===" -ForegroundColor Green
-Write-Host "✓ JDBC Layer deployed: $LayerArn" -ForegroundColor Green
-Write-Host "✓ Connector built and packaged (without JDBC driver)" -ForegroundColor Green
-Write-Host "✓ JAR uploaded to S3: s3://$S3Bucket/$S3Key" -ForegroundColor Green
-Write-Host "✓ CloudFormation stack deployed: $StackName" -ForegroundColor Green
-Write-Host "✓ Lambda function created: $LambdaFunctionName" -ForegroundColor Green
+Write-Host "SUCCESS: JDBC Layer deployed: $LayerArn" -ForegroundColor Green
+Write-Host "SUCCESS: Connector built and packaged (without JDBC driver)" -ForegroundColor Green
+Write-Host "SUCCESS: JAR uploaded to S3: s3://$S3Bucket/$S3Key" -ForegroundColor Green
+Write-Host "SUCCESS: CloudFormation stack deployed: $StackName" -ForegroundColor Green
+Write-Host "SUCCESS: Lambda function created: $LambdaFunctionName" -ForegroundColor Green
 Write-Host ""
 Write-Host "Architecture:" -ForegroundColor Cyan
 Write-Host "- Lambda Layer: Contains Databricks JDBC driver" -ForegroundColor White

@@ -68,6 +68,11 @@ Parameters:
     Description: "(Optional) An IAM policy ARN to use as the PermissionsBoundary for the created Lambda function's execution role"
     Default: ''
     Type: String
+
+  AthenaDatabricksValue:
+    Description: "(Optional) Value for athena_databricks environment variable"
+    Type: String
+    Default: 'workspace'
 Conditions:
   HasPermissionsBoundary: !Not [ !Equals [ !Ref PermissionsBoundaryARN, "" ] ]
   NotHasLambdaRole: !Equals [!Ref LambdaRoleARN, ""]
@@ -78,10 +83,12 @@ Resources:
     Properties:
       Environment:
         Variables:
+          JAVA_TOOL_OPTIONS: '--add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED'
+          athena_databricks: !Ref AthenaDatabricksValue
+          default: !Ref DefaultConnectionString
           disable_spill_encryption: !Ref DisableSpillEncryption
           spill_bucket: !Ref SpillBucket
           spill_prefix: !Ref SpillPrefix
-          default: !Ref DefaultConnectionString
       FunctionName: !Ref LambdaFunctionName
       Handler: com.amazonaws.athena.connectors.databricks.DatabricksCompositeHandler
       Runtime: java17

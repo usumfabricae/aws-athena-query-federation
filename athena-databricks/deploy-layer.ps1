@@ -43,10 +43,10 @@ if (!(Test-Path $DriverPath)) {
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to download Databricks driver"
         }
-        Write-Host "✓ Databricks driver downloaded" -ForegroundColor Green
+        Write-Host "SUCCESS: Databricks driver downloaded" -ForegroundColor Green
     }
     catch {
-        Write-Host "✗ Failed to download driver: $_" -ForegroundColor Red
+        Write-Host "ERROR: Failed to download driver: $_" -ForegroundColor Red
         exit 1
     }
 } else {
@@ -57,10 +57,10 @@ if (!(Test-Path $DriverPath)) {
 Write-Host "Step 3: Copying driver to layer structure..." -ForegroundColor Yellow
 try {
     Copy-Item $DriverPath $JavaLibDir -Force
-    Write-Host "✓ Driver copied to layer structure" -ForegroundColor Green
+    Write-Host "SUCCESS: Driver copied to layer structure" -ForegroundColor Green
 }
 catch {
-    Write-Host "✗ Failed to copy driver: $_" -ForegroundColor Red
+    Write-Host "ERROR: Failed to copy driver: $_" -ForegroundColor Red
     exit 1
 }
 
@@ -77,15 +77,15 @@ try {
     
     $ZipSize = (Get-Item $LayerZip).Length
     $ZipSizeMB = [math]::Round($ZipSize / 1MB, 2)
-    Write-Host "✓ Layer ZIP created: $LayerZip ($ZipSizeMB MB)" -ForegroundColor Green
+    Write-Host "SUCCESS: Layer ZIP created: $LayerZip ($ZipSizeMB MB)" -ForegroundColor Green
     
     # Check size limits
     if ($ZipSize -gt 52428800) {  # 50MB limit for direct upload
-        Write-Host "⚠ Layer size exceeds 50MB - will use S3 upload" -ForegroundColor Yellow
+        Write-Host "WARNING: Layer size exceeds 50MB - will use S3 upload" -ForegroundColor Yellow
     }
 }
 catch {
-    Write-Host "✗ Failed to create ZIP: $_" -ForegroundColor Red
+    Write-Host "ERROR: Failed to create ZIP: $_" -ForegroundColor Red
     exit 1
 }
 
@@ -97,10 +97,10 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "S3 upload failed"
     }
-    Write-Host "✓ Layer uploaded to s3://$S3Bucket/$S3Key" -ForegroundColor Green
+    Write-Host "SUCCESS: Layer uploaded to s3://$S3Bucket/$S3Key" -ForegroundColor Green
 }
 catch {
-    Write-Host "✗ S3 upload failed: $_" -ForegroundColor Red
+    Write-Host "ERROR: S3 upload failed: $_" -ForegroundColor Red
     exit 1
 }
 
@@ -123,12 +123,12 @@ try {
     $LayerArn = $LayerInfo.LayerArn
     $LayerVersion = $LayerInfo.Version
     
-    Write-Host "✓ Layer published successfully" -ForegroundColor Green
+    Write-Host "SUCCESS: Layer published successfully" -ForegroundColor Green
     Write-Host "  Layer ARN: $LayerArn" -ForegroundColor White
     Write-Host "  Version: $LayerVersion" -ForegroundColor White
 }
 catch {
-    Write-Host "✗ Layer publication failed: $_" -ForegroundColor Red
+    Write-Host "ERROR: Layer publication failed: $_" -ForegroundColor Red
     exit 1
 }
 
@@ -137,18 +137,18 @@ Write-Host "Step 7: Cleaning up..." -ForegroundColor Yellow
 try {
     Remove-Item -Recurse -Force $LayerDir
     Remove-Item $LayerZip -Force
-    Write-Host "✓ Cleanup completed" -ForegroundColor Green
+    Write-Host "SUCCESS: Cleanup completed" -ForegroundColor Green
 }
 catch {
-    Write-Host "⚠ Cleanup warning: $_" -ForegroundColor Yellow
+    Write-Host "WARNING: Cleanup warning: $_" -ForegroundColor Yellow
 }
 
 Write-Host ""
 Write-Host "=== Layer Deployment Summary ===" -ForegroundColor Green
-Write-Host "✓ Layer Name: $LayerName" -ForegroundColor Green
-Write-Host "✓ Layer ARN: $LayerArn" -ForegroundColor Green
-Write-Host "✓ Version: $LayerVersion" -ForegroundColor Green
-Write-Host "✓ Compatible Runtimes: java17, java11, java8.al2" -ForegroundColor Green
+Write-Host "SUCCESS: Layer Name: $LayerName" -ForegroundColor Green
+Write-Host "SUCCESS: Layer ARN: $LayerArn" -ForegroundColor Green
+Write-Host "SUCCESS: Version: $LayerVersion" -ForegroundColor Green
+Write-Host "SUCCESS: Compatible Runtimes: java17, java11, java8.al2" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
 Write-Host "1. Update your CloudFormation template to reference this layer" -ForegroundColor White

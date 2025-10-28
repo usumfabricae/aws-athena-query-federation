@@ -21,10 +21,10 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Maven not found"
     }
-    Write-Host "✓ Maven found" -ForegroundColor Green
+    Write-Host "SUCCESS: Maven found" -ForegroundColor Green
 }
 catch {
-    Write-Host "✗ Maven is required but not found in PATH" -ForegroundColor Red
+    Write-Host "ERROR: Maven is required but not found in PATH" -ForegroundColor Red
     Write-Host "Please install Maven and ensure it's in your PATH" -ForegroundColor Red
     exit 1
 }
@@ -37,10 +37,10 @@ if ($Clean) {
         if ($LASTEXITCODE -ne 0) {
             throw "Maven clean failed"
         }
-        Write-Host "✓ Clean completed" -ForegroundColor Green
+        Write-Host "SUCCESS: Clean completed" -ForegroundColor Green
     }
     catch {
-        Write-Host "✗ Clean failed: $_" -ForegroundColor Red
+        Write-Host "ERROR: Clean failed: $_" -ForegroundColor Red
         exit 1
     }
 } else {
@@ -56,43 +56,43 @@ if (!(Test-Path $DriverPath)) {
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to download Databricks driver"
         }
-        Write-Host "✓ Databricks driver downloaded" -ForegroundColor Green
+        Write-Host "SUCCESS: Databricks driver downloaded" -ForegroundColor Green
     }
     catch {
-        Write-Host "✗ Failed to download driver: $_" -ForegroundColor Red
+        Write-Host "ERROR: Failed to download driver: $_" -ForegroundColor Red
         exit 1
     }
 } else {
-    Write-Host "✓ Databricks driver already available" -ForegroundColor Green
+    Write-Host "SUCCESS: Databricks driver already available" -ForegroundColor Green
 }
 
 # Step 3: Build with Maven (excluding JDBC driver from final JAR)
-$MavenGoals = "compile package"
 if ($SkipTests) {
-    $MavenGoals += " -DskipTests"
     Write-Host "Step 3: Building connector (skipping tests)..." -ForegroundColor Yellow
+    $MavenArgs = @("clean", "compile", "package", "-DskipTests", "-Dcheckstyle.skip=true", "-q")
 } else {
     Write-Host "Step 3: Building connector (including tests)..." -ForegroundColor Yellow
+    $MavenArgs = @("clean", "compile", "package", "-Dcheckstyle.skip=true", "-q")
 }
 
 try {
     # The JDBC driver has 'provided' scope, so it won't be included in the JAR
-    mvn $MavenGoals -q
+    & mvn $MavenArgs
     if ($LASTEXITCODE -ne 0) {
         throw "Maven build failed"
     }
-    Write-Host "✓ Build completed successfully" -ForegroundColor Green
+    Write-Host "SUCCESS: Build completed successfully" -ForegroundColor Green
 }
 catch {
-    Write-Host "✗ Build failed: $_" -ForegroundColor Red
-    Write-Host "Try running with verbose output: mvn $MavenGoals" -ForegroundColor Red
+    Write-Host "ERROR: Build failed: $_" -ForegroundColor Red
+    Write-Host "Try running with verbose output: mvn clean compile package" -ForegroundColor Red
     exit 1
 }
 
 # Step 4: Verify build output
 $JarPath = ".\target\athena-databricks-2022.47.1.jar"
 if (!(Test-Path $JarPath)) {
-    Write-Host "✗ Expected JAR file not found at $JarPath" -ForegroundColor Red
+    Write-Host "ERROR: Expected JAR file not found at $JarPath" -ForegroundColor Red
     Write-Host "Check the Maven build output for errors" -ForegroundColor Red
     exit 1
 }
@@ -101,38 +101,38 @@ if (!(Test-Path $JarPath)) {
 try {
     $JarSize = (Get-Item $JarPath).Length
     $JarSizeMB = [math]::Round($JarSize / 1MB, 2)
-    Write-Host "✓ JAR created: $JarPath ($JarSizeMB MB)" -ForegroundColor Green
+    Write-Host "SUCCESS: JAR created: $JarPath ($JarSizeMB MB)" -ForegroundColor Green
     
     # Check if JDBC driver is excluded
     $JarContents = jar -tf $JarPath | Select-String -Pattern "DatabricksJDBC|databricks.*jdbc" -Quiet
     if ($JarContents) {
-        Write-Host "⚠ WARNING: JDBC driver may still be included in JAR" -ForegroundColor Yellow
+        Write-Host "WARNING: JDBC driver may still be included in JAR" -ForegroundColor Yellow
         Write-Host "Verify the Maven profile is correctly excluding the driver" -ForegroundColor Yellow
     } else {
-        Write-Host "✓ JDBC driver successfully excluded from JAR" -ForegroundColor Green
+        Write-Host "SUCCESS: JDBC driver successfully excluded from JAR" -ForegroundColor Green
     }
     
     # Size validation
     if ($JarSize -gt 262144000) {  # 250MB limit
-        Write-Host "✗ JAR size still exceeds AWS Lambda limit of 250MB" -ForegroundColor Red
+        Write-Host "ERROR: JAR size still exceeds AWS Lambda limit of 250MB" -ForegroundColor Red
         Write-Host "Additional optimization may be required" -ForegroundColor Red
         exit 1
     } elseif ($JarSize -gt 52428800) {  # 50MB limit for direct upload
-        Write-Host "⚠ JAR size exceeds 50MB - will require S3 upload for deployment" -ForegroundColor Yellow
+        Write-Host "WARNING: JAR size exceeds 50MB - will require S3 upload for deployment" -ForegroundColor Yellow
     } else {
-        Write-Host "✓ JAR size is within direct upload limits" -ForegroundColor Green
+        Write-Host "SUCCESS: JAR size is within direct upload limits" -ForegroundColor Green
     }
 }
 catch {
-    Write-Host "✗ Failed to analyze JAR: $_" -ForegroundColor Red
+    Write-Host "ERROR: Failed to analyze JAR: $_" -ForegroundColor Red
     exit 1
 }
 
 Write-Host ""
 Write-Host "=== Build Summary ===" -ForegroundColor Green
-Write-Host "✓ Connector built successfully" -ForegroundColor Green
-Write-Host "✓ JAR file: $JarPath ($JarSizeMB MB)" -ForegroundColor Green
-Write-Host "✓ JDBC driver excluded (deploy as separate layer)" -ForegroundColor Green
+Write-Host "SUCCESS: Connector built successfully" -ForegroundColor Green
+Write-Host "SUCCESS: JAR file: $JarPath ($JarSizeMB MB)" -ForegroundColor Green
+Write-Host "SUCCESS: JDBC driver excluded (deploy as separate layer)" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
 Write-Host "1. Deploy the Databricks JDBC driver as a Lambda layer using deploy-layer.ps1" -ForegroundColor White

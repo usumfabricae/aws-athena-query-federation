@@ -46,6 +46,21 @@ chmod +x *.sh
     -r "us-east-1"
 ```
 
+### Option 1b: Deploy with Databricks Configuration
+
+**Windows (PowerShell):**
+```powershell
+.\deploy-connector.ps1 `
+    -S3Bucket "your-deployment-bucket" `
+    -LambdaFunctionName "athena-databricks-connector" `
+    -SecretNamePrefix "AthenaDatabricks" `
+    -SpillBucket "your-spill-bucket" `
+    -Region "us-east-1" `
+    -DatabricksSecretName "databricks/prod/credentials" `
+    -TestCatalog "hive_metastore" `
+    -TestSchema "default"
+```
+
 ### Option 2: Deploy Step by Step
 
 #### Step 1: Deploy the JDBC Driver Layer
@@ -124,6 +139,11 @@ This will output a Layer ARN like: `arn:aws:lambda:us-east-1:123456789012:layer:
 - **LambdaMemory**: Function memory in MB (default: 3008)
 - **SecurityGroupIds**: VPC security groups (comma-separated)
 - **SubnetIds**: VPC subnets (comma-separated)
+- **DatabricksSecretName**: AWS Secrets Manager secret name containing Databricks credentials
+- **TestCatalog**: Default catalog name for testing (default: main)
+- **TestSchema**: Default schema name for testing (default: default)
+- **DatabricksHost**: Databricks cluster hostname (alternative to Secrets Manager)
+- **DatabricksHttpPath**: Databricks HTTP path (alternative to Secrets Manager)
 
 ## Files Created
 
